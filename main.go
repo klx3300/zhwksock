@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"time"
 )
 
 const (
@@ -172,16 +173,22 @@ func main() {
 					}
 					// start a goroutine to read stuff from returns
 					go func() {
-					LABEL_RST:
-						tmgr := <-getReplyChan
-						// check matching
-						if fullbarrcmp(tmgr.ipaddr, dstaddr) && fullbarrcmp(tmgr.port, dstport) {
-							// that's exactly what i need!
-							retx := AESDecrypt(tmgr.data)
-							conn.Write(retx)
-						} else {
-							go func() { getReplyChan <- tmgr }()
-							goto LABEL_RST
+						for {
+							select {
+							case tmgr := <-getReplyChan:
+								// check matching
+								if fullbarrcmp(tmgr.ipaddr, dstaddr) && fullbarrcmp(tmgr.port, dstport) {
+									// that's exactly what i need!
+									retx := AESDecrypt(tmgr.data)
+									fmt.Println(string(retx))
+									conn.Write(retx)
+								} else {
+									go func() { getReplyChan <- tmgr }()
+								}
+							case <-time.After(2 * time.Second):
+								conn.Close()
+								return
+							}
 						}
 					}()
 				case STATE_INTERSRV_AUTH:
@@ -192,6 +199,7 @@ func main() {
 					// take the risk of making this stuff not overflow the byte range
 					aurep.repsize = byte(len(auinfo.msg))
 					aurep.encmsg = AESEncrypt(auinfo.msg)
+					fmt.Printf("Sending Authentication Messeage..\n")
 					_, err := conn.Write(aurep.toByteArr())
 					if err != nil {
 						fmt.Printf("Network Error.Terminated.\n")
@@ -201,6 +209,7 @@ func main() {
 				case STATE_INTERSRV_AUTH_CONT:
 					// waiting authentication successive
 					if tx[0] != 0 {
+						fmt.Printf("Authentication Succeed.\n")
 						srstate = STATE_INTERSRV_SMSG
 						receivedSrv = true
 						srvConn = conn

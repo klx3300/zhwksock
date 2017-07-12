@@ -11,9 +11,9 @@ similar with socks5 proto handshake
 for implementation convi
 
 ```
- ---- ---- ----....
++----+----+----....
 |vers|NuMe|SuppMeth
- ---- ---- ----````
++----+----+----````
 ```
 
 `vers` -- protocol version.for zhwkproX,it starts from `0x80`
@@ -27,9 +27,9 @@ for implementation convi
 step 2 : inter-server reply
 
 ```
- ---- 
++----+
 |vers|
- ----
++----+
 ```
 
 `vers` -- protol version sent before
@@ -41,9 +41,9 @@ step 2 : inter-server reply
 step 1 : server asks
 
 ```
- ---- ----....
++----+----....
 |size|auth msg
- ---- ----````
++----+----````
 ```
 
 `size` -- length of auth msg
@@ -55,9 +55,9 @@ step 1 : server asks
 step 2 : interserver reply
 
 ```
- ---- ----....
++----+----....
 |size|encr msg
- ---- ----````
++----+----````
 ```
 
 `size` -- length of encrypted msg
@@ -83,9 +83,9 @@ if the starting part are equal,then authentication process succeeded.
 step 3 : server reply
 
 ```
- ----
++----+
 |succ|
- ----
++----+
 ```
 
 `succ` -- 0x00 failed.otherwise succeed.

@@ -1,11 +1,7 @@
 package main
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"encoding/binary"
-	"fmt"
-	"os"
 )
 
 type zhwkAuthMsg struct {
@@ -18,34 +14,6 @@ func makeAuthMsg(barr []byte) zhwkAuthMsg {
 	am.msgsize = barr[0]
 	am.msg = barr[1 : 1+am.msgsize]
 	return am
-}
-
-func AESEncrypt(barr []byte) []byte {
-	var commIV = []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f}
-	key := "samplekey"
-	acipher, cerr := aes.NewCipher([]byte(key))
-	if cerr != nil {
-		fmt.Printf("Cipher Error.Terminating.\n")
-		os.Exit(-1)
-	}
-	cfb := cipher.NewCFBEncrypter(acipher, commIV)
-	encres := make([]byte, len(barr))
-	cfb.XORKeyStream(encres, barr)
-	return encres
-}
-
-func AESDecrypt(barr []byte) []byte {
-	var commIV = []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f}
-	key := "samplekey"
-	acipher, cerr := aes.NewCipher([]byte(key))
-	if cerr != nil {
-		fmt.Printf("Cipher Error.Terminating.\n")
-		os.Exit(-1)
-	}
-	cfb := cipher.NewCFBDecrypter(acipher, commIV)
-	decres := make([]byte, len(barr))
-	cfb.XORKeyStream(decres, barr)
-	return decres
 }
 
 type zhwkAuthReply struct {
