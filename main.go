@@ -19,7 +19,7 @@ const (
 func main() {
 	//portstate := make([]bool, 10000)
 	//portbegin := uint(49107)
-	listenaddr := "127.0.0.1:1992"
+	listenaddr := ":1992"
 	thisSrvAddr, _ := net.ResolveTCPAddr("tcp4", "127.0.0.1:1992")
 	tcpaddr, _ := net.ResolveTCPAddr("tcp4", listenaddr)
 	listener, _ := net.ListenTCP("tcp", tcpaddr)
@@ -180,6 +180,7 @@ func main() {
 								if fullbarrcmp(tmgr.ipaddr, dstaddr) && fullbarrcmp(tmgr.port, dstport) {
 									// that's exactly what i need!
 									retx := AESDecrypt(tmgr.data)
+									fmt.Println(retx)
 									fmt.Println(string(retx))
 									conn.Write(retx)
 								} else {
