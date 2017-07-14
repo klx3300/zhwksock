@@ -3,14 +3,14 @@ package main
 type cliHandshake struct {
 	versionID     byte
 	methodsNumber byte
-	methodArr     *byte
+	methodArr     []byte
 }
 
 func makeCliHandshake(barr []byte) cliHandshake {
 	var tmpv cliHandshake
 	tmpv.versionID = barr[0]
 	tmpv.methodsNumber = barr[1]
-	tmpv.methodArr = &(barr[2])
+	tmpv.methodArr = barr[2:]
 	return tmpv
 }
 

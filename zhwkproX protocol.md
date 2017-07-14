@@ -130,6 +130,4 @@ details:
 
 server will reuse the tcp connection between server and destination address.
 
-the tcp connection to each destination will be kept 30 seconds, then closed for further use.
-
-and this method can bypass some problem of merging truncated prox requests.
+if dlen equals 0, that means dst closed connection.

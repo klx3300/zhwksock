@@ -35,22 +35,31 @@ func main() {
 			srstate := STATE_WAITING_HS
 			var dstaddr []byte
 			var dstport []byte
-			dstaddr = make([]byte, 4)
-			dstaddr[0] = 0xFF
-			dstport = make([]byte, 2)
-			dstport[0] = 0xFF
 			for {
-				tx := make([]byte, 102400)
-				recvlen, err := conn.Read(tx)
-				if err != nil {
-					break
+				handleError := func(err error) bool {
+					if err != nil {
+						fmt.Printf("Error %v\n", err.Error())
+						return true
+					}
+					return false
 				}
-				tx = tx[:recvlen]
-				fmt.Printf("(%d) %v\nStr:\n%v\n", srstate, tx, string(tx))
 				switch srstate {
 				case STATE_WAITING_HS:
-					hsinfo := makeCliHandshake(tx)
-					if hsinfo.versionID != 5 || hsinfo.methodsNumber < 1 || *(hsinfo.methodArr) != 0 {
+					var hsinfo cliHandshake
+					tx := make([]byte, 2)
+					_, err := conn.Read(tx)
+					if handleError(err) {
+						return
+					}
+					hsinfo.versionID = tx[0]
+					hsinfo.methodsNumber = tx[1]
+					tx = make([]byte, int(hsinfo.methodsNumber))
+					_, err = conn.Read(tx)
+					if handleError(err) {
+						return
+					}
+					hsinfo.methodArr = tx
+					if hsinfo.versionID != 5 || hsinfo.methodsNumber < 1 || hsinfo.methodArr[0] != 0 {
 						// there are still possiblities
 						// that is zhwkproX proto msg sent from zhwkproX server
 						if hsinfo.versionID == 0x80 {
@@ -76,7 +85,7 @@ func main() {
 					var retx returnCliHandshake
 					retx.versionID = 5
 					retx.methodID = 0
-					_, err := conn.Write(retx.toByteArr())
+					_, err = conn.Write(retx.toByteArr())
 					if err != nil {
 						fmt.Printf("Network error.Terminated.\n")
 						break
@@ -85,7 +94,46 @@ func main() {
 					srstate = STATE_REQUEST
 				case STATE_REQUEST:
 					// sending requests from clients
-					cr := makeCliRequest(tx)
+					var cr cliRequest
+					tx := make([]byte, 4)
+					_, err := conn.Read(tx)
+					if handleError(err) {
+						return
+					}
+					cr.versionID = tx[0]
+					cr.commandID = tx[1]
+					cr.reservedV = tx[2]
+					cr.addrType = tx[3]
+					switch cr.addrType {
+					case ADDR_IPV4:
+						cr.destinationAddr = make([]byte, 4)
+						_, err = conn.Read(cr.destinationAddr)
+						if handleError(err) {
+							return
+						}
+					case ADDR_IPV6:
+						cr.destinationAddr = make([]byte, 16)
+						_, err = conn.Read(cr.destinationAddr)
+						if handleError(err) {
+							return
+						}
+					case ADDR_DOM:
+						tx = make([]byte, 1)
+						_, err = conn.Read(tx)
+						if handleError(err) {
+							return
+						}
+						cr.destinationAddr = make([]byte, int(tx[0]))
+						_, err = conn.Read(cr.destinationAddr)
+						if handleError(err) {
+							return
+						}
+					}
+					cr.destinationPort = make([]byte, 2)
+					_, err = conn.Read(cr.destinationPort)
+					if handleError(err) {
+						return
+					}
 					// check supportment
 					if cr.commandID != CMD_CONNECT || cr.addrType == ADDR_IPV6 || cr.versionID != 5 {
 						fmt.Printf("Unsupported operation error.Terminated.\n")
@@ -142,15 +190,46 @@ func main() {
 						}
 					}()*/
 					// return the values to the client
-					_, err := conn.Write(crep.toByteArr())
+					_, err = conn.Write(crep.toByteArr())
 					if err != nil {
 						fmt.Printf("Network Error.Terminated.\n")
 						break
 					}
+					go func(dstaddr []byte, dstport []byte) {
+						// start a goroutine to read stuff from returns
+						for {
+							tmgr := <-getReplyChan
+							// check matching
+							if fullbarrcmp(tmgr.ipaddr, dstaddr) && fullbarrcmp(tmgr.port, dstport) {
+								// that's exactly what i need!
+								// check length:
+								fmt.Printf("Received correct reply.\n")
+								if tmgr.datalength == 0 {
+									fmt.Printf("Connection Close Request Received.\n")
+									conn.Close()
+									return
+								}
+								retx := AESDecrypt(tmgr.data)
+								fmt.Println(retx)
+								fmt.Println(string(retx))
+								conn.Write(retx)
+							} else {
+								go func() {
+									time.Sleep(100 * time.Millisecond)
+									getReplyChan <- tmgr
+								}()
+							}
+						}
+					}(dstaddr, dstport)
 					srstate = STATE_GET
 				case STATE_GET:
 					// first print some debug messeages
-					fmt.Printf("Attempt GET %v port %v\n", dstaddr, dstport)
+					tx := make([]byte, 102400)
+					n, err := conn.Read(tx)
+					if handleError(err) {
+						return
+					}
+					tx = tx[:n]
 					if receivedSrv == false {
 						fmt.Printf("Failed due to no server connected yet.Terminating..\n")
 						break
@@ -171,37 +250,28 @@ func main() {
 						fmt.Printf("Network error.Terminated.\n")
 						break
 					}
-					// start a goroutine to read stuff from returns
-					go func() {
-						for {
-							select {
-							case tmgr := <-getReplyChan:
-								// check matching
-								if fullbarrcmp(tmgr.ipaddr, dstaddr) && fullbarrcmp(tmgr.port, dstport) {
-									// that's exactly what i need!
-									retx := AESDecrypt(tmgr.data)
-									fmt.Println(retx)
-									fmt.Println(string(retx))
-									conn.Write(retx)
-								} else {
-									go func() { getReplyChan <- tmgr }()
-								}
-							case <-time.After(2 * time.Second):
-								conn.Close()
-								return
-							}
-						}
-					}()
 				case STATE_INTERSRV_AUTH:
 					// authenticate with zhwkproX srv
-					auinfo := makeAuthMsg(tx)
+					var auinfo zhwkAuthMsg
+					tx := make([]byte, 1)
+					_, err := conn.Read(tx)
+					if handleError(err) {
+						return
+					}
+					auinfo.msgsize = tx[0]
+					tx = make([]byte, int(auinfo.msgsize))
+					_, err = conn.Read(tx)
+					if handleError(err) {
+						return
+					}
+					auinfo.msg = tx
 					auinfo.msg = iappender(auinfo.msg, []byte("fake rand strings"))
 					var aurep zhwkAuthReply
 					// take the risk of making this stuff not overflow the byte range
 					aurep.repsize = byte(len(auinfo.msg))
 					aurep.encmsg = AESEncrypt(auinfo.msg)
 					fmt.Printf("Sending Authentication Messeage..\n")
-					_, err := conn.Write(aurep.toByteArr())
+					_, err = conn.Write(aurep.toByteArr())
 					if err != nil {
 						fmt.Printf("Network Error.Terminated.\n")
 						break
@@ -209,6 +279,11 @@ func main() {
 					srstate = STATE_INTERSRV_AUTH_CONT
 				case STATE_INTERSRV_AUTH_CONT:
 					// waiting authentication successive
+					tx := make([]byte, 1)
+					_, err := conn.Read(tx)
+					if handleError(err) {
+						return
+					}
 					if tx[0] != 0 {
 						fmt.Printf("Authentication Succeed.\n")
 						srstate = STATE_INTERSRV_SMSG
@@ -220,10 +295,47 @@ func main() {
 					}
 				case STATE_INTERSRV_SMSG:
 					// in this state,read all zhwkGetReplies and put into a go channel
-					gr := makeGetReply(tx)
-					go func() {
+					var gr zhwkGetReply
+					tx := make([]byte, 1)
+					_, err := conn.Read(tx)
+					if handleError(err) {
+						return
+					}
+					gr.ipversion = tx[0]
+					var iplength int
+					switch gr.ipversion {
+					case 0x04:
+						iplength = 4
+					case 0x06:
+						iplength = 16
+					}
+					tx = make([]byte, iplength)
+					_, err = conn.Read(tx)
+					if handleError(err) {
+						return
+					}
+					gr.ipaddr = tx
+					gr.port = make([]byte, 2)
+					_, err = conn.Read(gr.port)
+					if handleError(err) {
+						return
+					}
+					tx = make([]byte, 4)
+					_, err = conn.Read(tx)
+					if handleError(err) {
+						return
+					}
+					gr.datalength = binary.LittleEndian.Uint32(tx)
+					gr.data = make([]byte, int(gr.datalength))
+					_, err = conn.Read(gr.data)
+					if handleError(err) {
+						return
+					}
+					fmt.Printf("Received a reply from server.\n")
+					go func(gr zhwkGetReply) {
 						getReplyChan <- gr
-					}()
+						fmt.Printf("Reply sent to channel.\n")
+					}(gr)
 				}
 			}
 		}()
